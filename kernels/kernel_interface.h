@@ -2,12 +2,12 @@
 #define KERNEL_INTERFACE_H
 
 #include <cuda_runtime.h>
-
+#include <stdint.h>
 
 extern "C" cudaError_t multiply(
-    int* C, 
-    const int* A, 
-    const int* B, 
+    uint32_t* C, 
+    const uint32_t* A, 
+    const uint32_t* B, 
     size_t sizeA,
     size_t sizeB,
     cudaStream_t stream = nullptr

@@ -1,12 +1,22 @@
 #include "kernel_interface.h"
 #include <stdio.h>
 #include <stdint.h>
+/*
 
-
+*/
 __global__ void multiply_kernel(uint32_t* C, const uint32_t* A, const uint32_t* B, size_t sizeA, size_t sizeB) {
     const uint idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx == 0) {
-        C[0] = A[0] * B[0];
+    for (uint i = idx; i < sizeA * sizeB; i += blockDim.x) {
+        int aPos = i % sizeA;
+        int bPos = i / sizeA;
+        if (aPos < sizeA && bPos < sizeB) {
+            unsigned long long product = (unsigned long long)A[aPos] * B[bPos];
+            unsigned long long carry = product;
+            int cPos = aPos + bPos;
+            while (carry > 0) {
+                unsigned long long old_val = atomicAdd(&C[cPos], (uint32_t)(carry & 0xFFFFFFFF));
+            }
+        }
     }
 }
 
@@ -27,9 +37,9 @@ extern "C" cudaError_t multiply(
 }
 
 extern "C" const char* getKernelName() {
-    return "Example Multiplication";
+    return "Naive Multiplication";
 }
 
 extern "C" const char* getKernelDescription() {
-    return "Multiplies two numbers together. Only works for numbers small enough to fit in a 32-bit integer.";
+    return "Multiplies two numbers A and B by iterating over each digit of A and B and multiplying them together.";
 } 
