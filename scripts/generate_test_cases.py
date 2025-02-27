@@ -3,6 +3,7 @@ import os
 import sys
 import argparse
 import numpy as np
+import random
 from pathlib import Path
 
 OUTPUT_DIR = "tests/test_cases"
