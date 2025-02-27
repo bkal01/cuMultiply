@@ -7,6 +7,17 @@ from pathlib import Path
 
 OUTPUT_DIR = "tests/test_cases"
 
+def int_to_uint32_array(x: int) -> np.ndarray:
+    """Convert arbitrary precision integer to array of uint32"""
+    if x == 0:
+        return np.array([0], dtype=np.uint32)
+    
+    chunks = []
+    while x > 0:
+        chunks.append(x & 0xFFFFFFFF)
+        x >>= 32
+    return np.array(chunks, dtype=np.uint32)
+
 def generate_test_case(
     num_digits: int,
     case_name: str
@@ -24,17 +35,22 @@ def generate_test_case(
     min_val = 10**(num_digits-1) if num_digits > 1 else 0
     max_val = 10**num_digits - 1
     
-    input_a = np.random.randint(min_val, max_val, dtype=np.int32)
-    input_b = np.random.randint(min_val, max_val, dtype=np.int32)
+    # We generate random integers with unbounded precision and then convert to arrays of uin32 chunks.
+    input_a = random.randint(min_val, max_val)
+    input_b = random.randint(min_val, max_val)
     expected = input_a * input_b
     
-    input_a.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_a.bin"))
-    input_b.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_b.bin"))
-    expected.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_expected.bin"))
+    input_a_arr = int_to_uint32_array(input_a)
+    input_b_arr = int_to_uint32_array(input_b)
+    expected_arr = int_to_uint32_array(expected)
     
-    print(f"  - {case_name}_a.bin ({input_a.nbytes} bytes)")
-    print(f"  - {case_name}_b.bin ({input_b.nbytes} bytes)")
-    print(f"  - {case_name}_expected.bin ({expected.nbytes} bytes)")
+    input_a_arr.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_a.bin"))
+    input_b_arr.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_b.bin"))
+    expected_arr.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_expected.bin"))
+    
+    print(f"  - {case_name}_a.bin ({input_a_arr.nbytes} bytes)")
+    print(f"  - {case_name}_b.bin ({input_b_arr.nbytes} bytes)")
+    print(f"  - {case_name}_expected.bin ({expected_arr.nbytes} bytes)")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate test cases for CUDA integer multiplication kernels")

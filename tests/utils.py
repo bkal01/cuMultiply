@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import ctypes
-from ctypes import c_int, c_size_t, c_void_p, c_char_p
 import os
 import numpy as np
 import torch
@@ -24,20 +23,20 @@ def load_cuda_kernel(kernel_path: str) -> ctypes.CDLL:
         
         # Set function signatures for the library
         lib.multiply.argtypes = [
-            c_void_p,  # C
-            c_void_p,  # A
-            c_void_p,  # B
-            c_size_t,  # sizeA
-            c_size_t,  # sizeB
-            c_void_p   # stream
+            ctypes.c_void_p,  # C
+            ctypes.c_void_p,  # A
+            ctypes.c_void_p,  # B
+            ctypes.c_size_t,  # sizeA
+            ctypes.c_size_t,  # sizeB
+            ctypes.c_void_p   # stream
         ]
-        lib.multiply.restype = c_int
+        lib.multiply.restype = ctypes.c_int
         
         lib.getKernelName.argtypes = []
-        lib.getKernelName.restype = c_char_p
+        lib.getKernelName.restype = ctypes.c_char_p
         
         lib.getKernelDescription.argtypes = []
-        lib.getKernelDescription.restype = c_char_p
+        lib.getKernelDescription.restype = ctypes.c_char_p
         
         return lib
     except Exception as e:
@@ -110,9 +109,9 @@ def run_kernel(lib: ctypes.CDLL, input_a: np.ndarray, input_b: np.ndarray) -> np
     b_cuda = torch.tensor(input_b, device='cuda', dtype=torch.int32)
     c_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.int32)
     
-    a_ptr = c_void_p(a_cuda.data_ptr())
-    b_ptr = c_void_p(b_cuda.data_ptr())
-    c_ptr = c_void_p(c_cuda.data_ptr())
+    a_ptr = ctypes.c_void_p(a_cuda.data_ptr())
+    b_ptr = ctypes.c_void_p(b_cuda.data_ptr())
+    c_ptr = ctypes.c_void_p(c_cuda.data_ptr())
     
     error = lib.multiply(c_ptr, a_ptr, b_ptr, len(input_a), len(input_b), None)
     if error != 0:

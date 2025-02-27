@@ -5,13 +5,19 @@ import argparse
 import numpy as np
 import torch
 import ctypes
-from ctypes import c_void_p
 from typing import Dict, List, Tuple
 
 from tests.utils import (
     load_cuda_kernel, get_kernel_paths, get_test_cases,
     load_test_case, run_kernel
 )
+
+def uint32_array_to_int(arr: np.ndarray) -> int:
+    """Convert array of uint32 back to arbitrary precision integer"""
+    result = 0
+    for i, val in enumerate(arr):
+        result |= int(val) << (32 * i)
+    return result
 
 def validate_result(result: np.ndarray, expected: np.ndarray) -> str:
     """
@@ -24,23 +30,20 @@ def validate_result(result: np.ndarray, expected: np.ndarray) -> str:
     Returns:
         An empty string if the result is valid, otherwise an error message
     """
-    result_last = len(result) - 1
-    expected_last = len(expected) - 1
+    # Convert arrays to integers for comparison
+    result_int = uint32_array_to_int(result)
+    expected_int = uint32_array_to_int(expected)
     
-    while result_last >= 0 and result[result_last] == 0:
-        result_last -= 1
-    while expected_last >= 0 and expected[expected_last] == 0:
-        expected_last -= 1
-        
-    if result_last < 0 and expected_last < 0:
+    if result_int == expected_int:
         return ""
     
-    if result_last == expected_last and np.array_equal(result[:result_last + 1], expected[:expected_last + 1]):
-        return ""
-    
-    max_display = 10
-    error_msg = f"\n    Expected (trimmed, showing first {max_display}): {expected[:expected_last + 1][:max_display]}"
-    error_msg += f"\n    Result (trimmed, showing first {max_display}): {result[:result_last + 1][:max_display]}"
+    # For small numbers that fit in uint32, show the actual values
+    if result_int <= 0xFFFFFFFF and expected_int <= 0xFFFFFFFF:
+        error_msg =  f"\n    Expected: {expected_int}"
+        error_msg += f"\n    Result: {result_int}"
+        error_msg += f"\n    Difference: {result_int - expected_int:+d}"
+    else:
+        error_msg = "\n    Numbers too large to display. Result does not match expected value."
     
     return error_msg
 
@@ -125,4 +128,4 @@ def main():
     sys.exit(0 if all_passed else 1)
 
 if __name__ == "__main__":
-    main() 
+    main()
