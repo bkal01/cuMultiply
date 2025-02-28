@@ -24,6 +24,7 @@ def load_cuda_kernel(kernel_path: str) -> ctypes.CDLL:
         # Set function signatures for the library
         lib.multiply.argtypes = [
             ctypes.c_void_p,  # C
+            ctypes.c_void_p,  # bigC
             ctypes.c_void_p,  # A
             ctypes.c_void_p,  # B
             ctypes.c_size_t,  # sizeA
@@ -108,12 +109,14 @@ def run_kernel(lib: ctypes.CDLL, input_a: np.ndarray, input_b: np.ndarray) -> np
     a_cuda = torch.tensor(input_a, device='cuda', dtype=torch.int32)
     b_cuda = torch.tensor(input_b, device='cuda', dtype=torch.int32)
     c_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.int32)
+    bigc_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.int64)
     
     a_ptr = ctypes.c_void_p(a_cuda.data_ptr())
     b_ptr = ctypes.c_void_p(b_cuda.data_ptr())
     c_ptr = ctypes.c_void_p(c_cuda.data_ptr())
+    bigc_ptr = ctypes.c_void_p(bigc_cuda.data_ptr())
     
-    error = lib.multiply(c_ptr, a_ptr, b_ptr, len(input_a), len(input_b), None)
+    error = lib.multiply(c_ptr, bigc_ptr, a_ptr, b_ptr, len(input_a), len(input_b), None)
     if error != 0:
         cuda_error = ctypes.c_int(error).value
         raise RuntimeError(f"CUDA error: {cuda_error}")

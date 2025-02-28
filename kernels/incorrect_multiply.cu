@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 
-__global__ void multiply_kernel(int* C, const int* A, const int* B, size_t sizeA, size_t sizeB) {
+__global__ void multiply_kernel(uint32_t* C, const uint32_t* A, const uint32_t* B, size_t sizeA, size_t sizeB) {
     const uint idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx == 0) {
         C[0] = -1;
@@ -10,9 +10,10 @@ __global__ void multiply_kernel(int* C, const int* A, const int* B, size_t sizeA
 }
 
 extern "C" cudaError_t multiply(
-    int* C, 
-    const int* A, 
-    const int* B, 
+    uint32_t* C,
+    uint64_t* bigC,
+    const uint32_t* A,
+    const uint32_t* B,
     size_t sizeA,
     size_t sizeB,
     cudaStream_t stream

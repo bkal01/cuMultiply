@@ -4,34 +4,60 @@
 /*
 
 */
-__global__ void multiply_kernel(uint32_t* C, const uint32_t* A, const uint32_t* B, size_t sizeA, size_t sizeB) {
+__global__ void multiplyKernel(uint32_t* C, uint64_t* bigC, const uint32_t* A, const uint32_t* B, size_t sizeA, size_t sizeB) {
     const uint idx = blockIdx.x * blockDim.x + threadIdx.x;
-    for (uint i = idx; i < sizeA * sizeB; i += blockDim.x) {
-        int aPos = i % sizeA;
-        int bPos = i / sizeA;
+    const uint stride = blockDim.x * gridDim.x;
+    for (uint i = idx; i < sizeA * sizeB; i += stride) {
+        int aPos = i / sizeB;
+        int bPos = i % sizeB;
         if (aPos < sizeA && bPos < sizeB) {
-            unsigned long long product = (unsigned long long)A[aPos] * B[bPos];
-            unsigned long long carry = product;
+            uint64_t product = (uint64_t)A[aPos] * (uint64_t)B[bPos];
             int cPos = aPos + bPos;
-            while (carry > 0) {
-                unsigned long long old_val = atomicAdd(&C[cPos], (uint32_t)(carry & 0xFFFFFFFF));
-            }
+            atomicAdd(reinterpret_cast<unsigned long long int*>(&bigC[cPos]), 
+                     static_cast<unsigned long long int>(product));
         }
     }
 }
 
+__global__ void carryPropagationKernel(uint32_t* C, uint64_t* bigC, size_t sizeC) {
+    const uint idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx == 0) {
+        uint64_t carry = 0;
+        for (uint i = 0; i < sizeC; i++) {
+            uint64_t total = bigC[i] + carry;
+            C[i] = (uint32_t)(total & 0xFFFFFFFF);
+            carry = total >> 32;
+        }
+        if (carry > 0) {
+            C[sizeC] = (uint32_t)(carry & 0xFFFFFFFF);
+        }
+    }
+}
 extern "C" cudaError_t multiply(
     uint32_t* C,
+    uint64_t* bigC,
     const uint32_t* A,
     const uint32_t* B,
     size_t sizeA,
     size_t sizeB,
     cudaStream_t stream
 ) {
-    int numBlocks = 1;
     int threadsPerBlock = 256;
     
-    multiply_kernel<<<numBlocks, threadsPerBlock>>>(C, A, B, sizeA, sizeB);
+    size_t totalWork = sizeA * sizeB;
+    // 65535 is the maximum number of blocks that can be used in a CUDA kernel
+    int numBlocks;
+    if ((totalWork + threadsPerBlock - 1) / threadsPerBlock < 65535) {
+        numBlocks = (totalWork + threadsPerBlock - 1) / threadsPerBlock;
+    } else {
+        numBlocks = 65535;
+    }
+    
+    size_t sizeC = sizeA + sizeB;
+    cudaMemset(bigC, 0, sizeC * sizeof(uint64_t));
+    
+    multiplyKernel<<<numBlocks, threadsPerBlock, 0, stream>>>(C, bigC, A, B, sizeA, sizeB);
+    carryPropagationKernel<<<1, threadsPerBlock, 0, stream>>>(C, bigC, sizeC);
     
     return cudaGetLastError();
 }

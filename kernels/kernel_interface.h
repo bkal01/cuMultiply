@@ -5,7 +5,8 @@
 #include <stdint.h>
 
 extern "C" cudaError_t multiply(
-    uint32_t* C, 
+    uint32_t* C,
+    uint64_t* bigC,
     const uint32_t* A, 
     const uint32_t* B, 
     size_t sizeA,
