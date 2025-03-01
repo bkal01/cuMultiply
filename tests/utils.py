@@ -106,10 +106,10 @@ def run_kernel(lib: ctypes.CDLL, input_a: np.ndarray, input_b: np.ndarray) -> np
     Returns:
         Output array from the kernel
     """
-    a_cuda = torch.tensor(input_a, device='cuda', dtype=torch.int32)
-    b_cuda = torch.tensor(input_b, device='cuda', dtype=torch.int32)
-    c_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.int32)
-    bigc_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.int64)
+    a_cuda = torch.tensor(input_a, device='cuda', dtype=torch.uint32)
+    b_cuda = torch.tensor(input_b, device='cuda', dtype=torch.uint32)
+    c_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.uint32)
+    bigc_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.uint64)
     
     a_ptr = ctypes.c_void_p(a_cuda.data_ptr())
     b_ptr = ctypes.c_void_p(b_cuda.data_ptr())
