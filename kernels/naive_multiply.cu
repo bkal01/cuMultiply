@@ -13,8 +13,7 @@ __global__ void multiplyKernel(uint32_t* C, uint64_t* bigC, const uint32_t* A, c
         if (aPos < sizeA && bPos < sizeB) {
             uint64_t product = (uint64_t)A[aPos] * (uint64_t)B[bPos];
             int cPos = aPos + bPos;
-            atomicAdd(reinterpret_cast<unsigned long long int*>(&bigC[cPos]), 
-                     static_cast<unsigned long long int>(product));
+            atomicAdd((unsigned long long int*)bigC + cPos, (unsigned long long int)product);
         }
     }
 }

@@ -16,7 +16,8 @@ def uint32_array_to_int(arr: np.ndarray) -> int:
     """Convert array of uint32 back to arbitrary precision integer"""
     result = 0
     for i, val in enumerate(arr):
-        result |= int(val) << (32 * i)
+        unsigned_val = int(val) & 0xFFFFFFFF
+        result |= unsigned_val << (32 * i)
     return result
 
 def validate_result(result: np.ndarray, expected: np.ndarray) -> str:
@@ -30,20 +31,15 @@ def validate_result(result: np.ndarray, expected: np.ndarray) -> str:
     Returns:
         An empty string if the result is valid, otherwise an error message
     """
-    # Convert arrays to integers for comparison
     result_int = uint32_array_to_int(result)
     expected_int = uint32_array_to_int(expected)
     
     if result_int == expected_int:
         return ""
     
-    # For small numbers that fit in uint32, show the actual values
-    if result_int <= 0xFFFFFFFF and expected_int <= 0xFFFFFFFF:
-        error_msg =  f"\n    Expected: {expected_int}"
-        error_msg += f"\n    Result: {result_int}"
-        error_msg += f"\n    Difference: {result_int - expected_int:+d}"
-    else:
-        error_msg = "\n    Numbers too large to display. Result does not match expected value."
+    error_msg =  f"\n    Expected: {expected_int}"
+    error_msg += f"\n    Result: {result_int}"
+    error_msg += f"\n    Difference: {result_int - expected_int:+d}"
     
     return error_msg
 
@@ -71,7 +67,20 @@ def validate_kernel(
         
         try:
             input_a, input_b, expected = load_test_case(case_name)
+            input_a_int = uint32_array_to_int(input_a)
+            input_b_int = uint32_array_to_int(input_b)
+            expected_int = uint32_array_to_int(expected)
+            
+            print(f"    Input A (integer): {input_a_int}")
+            print(f"    Input B (integer): {input_b_int}")
+            print(f"    Expected (little-endian uint32): {expected}")
+            print(f"    Expected (integer): {expected_int}")
+            
             result = run_kernel(lib, input_a, input_b)
+            result_int = uint32_array_to_int(result)
+            print(f"    Result (little-endian uint32): {result}")
+            print(f"    Result (integer): {result_int}")
+            
             error_msg = validate_result(result, expected)
             
             if error_msg:
