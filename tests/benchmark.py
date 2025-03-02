@@ -29,15 +29,13 @@ def benchmark_kernel(lib: ctypes.CDLL, case_name: str, warmup: int = 10, repeat:
     a_cuda = torch.tensor(input_a, device='cuda', dtype=torch.uint32)
     b_cuda = torch.tensor(input_b, device='cuda', dtype=torch.uint32)
     c_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.uint32)
-    bigc_cuda = torch.zeros(len(input_a) + len(input_b), device='cuda', dtype=torch.uint64)
     
     a_ptr = ctypes.c_void_p(a_cuda.data_ptr())
     b_ptr = ctypes.c_void_p(b_cuda.data_ptr())
     c_ptr = ctypes.c_void_p(c_cuda.data_ptr())
-    bigc_ptr = ctypes.c_void_p(bigc_cuda.data_ptr())
     
     ms = triton.testing.do_bench(
-        lambda: lib.multiply(c_ptr, bigc_ptr, a_ptr, b_ptr, len(input_a), len(input_b), None),
+        lambda: lib.multiply(c_ptr, a_ptr, b_ptr, len(input_a), len(input_b), None),
         warmup=warmup,
         rep=repeat
     )

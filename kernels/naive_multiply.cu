@@ -2,7 +2,8 @@
 #include <stdio.h>
 #include <stdint.h>
 /*
-
+    Multiplies two numbers A and B by computing the product of each "digit" of A and B
+    and then adding them together.
 */
 __global__ void multiplyKernel(uint32_t* C, uint64_t* bigC, const uint32_t* A, const uint32_t* B, size_t sizeA, size_t sizeB) {
     const uint idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -35,12 +36,10 @@ __global__ void carryPropagationKernel(uint32_t* C, uint64_t* bigC, size_t sizeC
 }
 extern "C" cudaError_t multiply(
     uint32_t* C,
-    uint64_t* bigC,
     const uint32_t* A,
     const uint32_t* B,
     size_t sizeA,
-    size_t sizeB,
-    cudaStream_t stream
+    size_t sizeB
 ) {
     int threadsPerBlock = 256;
     
@@ -49,11 +48,14 @@ extern "C" cudaError_t multiply(
     int numBlocks = min((totalWork + threadsPerBlock - 1) / threadsPerBlock, MAX_BLOCKS);
     
     size_t sizeC = sizeA + sizeB;
+
+    uint64_t* bigC;
+    cudaMalloc((void**)&bigC, sizeC * sizeof(uint64_t));
     cudaMemset(bigC, 0, sizeC * sizeof(uint64_t));
-    cudaMemset(C, 0, (sizeC + 1) * sizeof(uint32_t)); 
-    multiplyKernel<<<numBlocks, threadsPerBlock, 0, stream>>>(C, bigC, A, B, sizeA, sizeB);
-    carryPropagationKernel<<<1, threadsPerBlock, 0, stream>>>(C, bigC, sizeC);
+    multiplyKernel<<<numBlocks, threadsPerBlock>>>(C, bigC, A, B, sizeA, sizeB);
+    carryPropagationKernel<<<1, threadsPerBlock>>>(C, bigC, sizeC);
     
+    cudaFree(bigC);
     return cudaGetLastError();
 }
 

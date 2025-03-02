@@ -11,12 +11,10 @@ __global__ void multiply_kernel(uint32_t* C, const uint32_t* A, const uint32_t* 
 
 extern "C" cudaError_t multiply(
     uint32_t* C,
-    uint64_t* bigC,
     const uint32_t* A,
     const uint32_t* B,
     size_t sizeA,
-    size_t sizeB,
-    cudaStream_t stream
+    size_t sizeB
 ) {
     int numBlocks = 1;
     int threadsPerBlock = 256;
