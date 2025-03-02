@@ -45,13 +45,16 @@ def generate_test_case(
     input_b_arr = int_to_uint32_array(input_b)
     expected_arr = int_to_uint32_array(expected)
     
-    input_a_arr.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_a.bin"))
-    input_b_arr.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_b.bin"))
-    expected_arr.tofile(os.path.join(OUTPUT_DIR, f"{case_name}_expected.bin"))
+    digit_dir = os.path.join(OUTPUT_DIR, str(num_digits))
+    os.makedirs(digit_dir, exist_ok=True)
     
-    print(f"  - {case_name}_a.bin ({input_a_arr.nbytes} bytes)")
-    print(f"  - {case_name}_b.bin ({input_b_arr.nbytes} bytes)")
-    print(f"  - {case_name}_expected.bin ({expected_arr.nbytes} bytes)")
+    input_a_arr.tofile(os.path.join(digit_dir, f"{case_name}_a.bin"))
+    input_b_arr.tofile(os.path.join(digit_dir, f"{case_name}_b.bin"))
+    expected_arr.tofile(os.path.join(digit_dir, f"{case_name}_expected.bin"))
+    
+    print(f"  - {num_digits}/{case_name}_a.bin ({input_a_arr.nbytes} bytes)")
+    print(f"  - {num_digits}/{case_name}_b.bin ({input_b_arr.nbytes} bytes)")
+    print(f"  - {num_digits}/{case_name}_expected.bin ({expected_arr.nbytes} bytes)")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate test cases for CUDA integer multiplication kernels")
@@ -71,7 +74,8 @@ def main():
             case_name=f"case_{i+1}"
         )
     
-    print(f"All test cases generated in {OUTPUT_DIR}")
+    digit_dir = os.path.join(OUTPUT_DIR, str(args.num_digits))
+    print(f"All test cases generated in {digit_dir}")
 
 if __name__ == "__main__":
     main() 
