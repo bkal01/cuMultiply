@@ -46,12 +46,7 @@ extern "C" cudaError_t multiply(
     
     size_t totalWork = sizeA * sizeB;
     // 65535 is the maximum number of blocks that can be used in a CUDA kernel
-    int numBlocks;
-    if ((totalWork + threadsPerBlock - 1) / threadsPerBlock < 65535) {
-        numBlocks = (totalWork + threadsPerBlock - 1) / threadsPerBlock;
-    } else {
-        numBlocks = 65535;
-    }
+    int numBlocks = min((totalWork + threadsPerBlock - 1) / threadsPerBlock, MAX_BLOCKS);
     
     size_t sizeC = sizeA + sizeB;
     cudaMemset(bigC, 0, sizeC * sizeof(uint64_t));

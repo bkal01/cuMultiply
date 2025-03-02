@@ -4,6 +4,8 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
 
+#define MAX_BLOCKS ((size_t)65535)
+
 extern "C" cudaError_t multiply(
     uint32_t* C,
     uint64_t* bigC,
