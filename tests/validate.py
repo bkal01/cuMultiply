@@ -99,6 +99,7 @@ def validate_kernel(
 def main():
     parser = argparse.ArgumentParser(description="Validate CUDA integer multiplication kernels")
     parser.add_argument("--kernels", nargs='+', help="Paths to kernel libraries to validate")
+    parser.add_argument("--num-digits", help="Specific digit count subdirectory to test (e.g. '32', '64', '128')")
     
     args = parser.parse_args()
     
@@ -110,9 +111,10 @@ def main():
     
     print(f"Found {len(kernel_paths)} kernel(s) to validate")
     
-    test_cases = get_test_cases()
+    test_cases = get_test_cases(args.num_digits)
     if not test_cases:
-        print("No test cases found")
+        digit_info = f" for {args.num_digits} digits" if args.num_digits else ""
+        print(f"No test cases found{digit_info}")
         return
     
     print(f"Found {len(test_cases)} test case(s)")

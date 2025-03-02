@@ -3,7 +3,7 @@ import ctypes
 import os
 import numpy as np
 import torch
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Optional
 
 LIB_DIR = "build/lib"
 TEST_CASES_DIR = "tests/test_cases"
@@ -64,18 +64,36 @@ def get_kernel_paths(specified_kernels=None) -> List[str]:
             
     return kernel_paths
 
-def get_test_cases() -> List[str]:
+def get_test_cases(num_digits: Optional[str] = None) -> List[str]:
     """
     Find all test cases in the test cases directory
     
+    Args:
+        num_digits: Optional specific digit count subdirectory to look in
+        
     Returns:
         Sorted list of test case names
     """
     test_cases = set()
-    for file in os.listdir(TEST_CASES_DIR):
-        if file.endswith("_a.bin"):
-            case_name = file[:-6]
-            test_cases.add(case_name)
+    
+    if num_digits:
+        subdir = os.path.join(TEST_CASES_DIR, num_digits)
+        if os.path.exists(subdir) and os.path.isdir(subdir):
+            for file in os.listdir(subdir):
+                if file.endswith("_a.bin"):
+                    case_name = os.path.join(num_digits, file[:-6])
+                    test_cases.add(case_name)
+    else:
+        for root, dirs, files in os.walk(TEST_CASES_DIR):
+            for file in files:
+                if file.endswith("_a.bin"):
+                    rel_dir = os.path.relpath(root, TEST_CASES_DIR)
+                    if rel_dir == ".":
+                        case_name = file[:-6]
+                    else:
+                        case_name = os.path.join(rel_dir, file[:-6])
+                    test_cases.add(case_name)
+    
     return sorted(list(test_cases))
 
 def load_test_case(case_name: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -83,14 +101,16 @@ def load_test_case(case_name: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     Load a test case from binary files
     
     Args:
-        case_name: Name of the test case to load
+        case_name: Name of the test case to load (may include subdirectory)
         
     Returns:
         Tuple of (input_a, input_b, expected_output) numpy arrays
     """
-    input_a = np.fromfile(os.path.join(TEST_CASES_DIR, f"{case_name}_a.bin"), dtype=np.uint32)
-    input_b = np.fromfile(os.path.join(TEST_CASES_DIR, f"{case_name}_b.bin"), dtype=np.uint32)
-    expected = np.fromfile(os.path.join(TEST_CASES_DIR, f"{case_name}_expected.bin"), dtype=np.uint32)
+    case_path = os.path.join(TEST_CASES_DIR, case_name)
+    
+    input_a = np.fromfile(f"{case_path}_a.bin", dtype=np.uint32)
+    input_b = np.fromfile(f"{case_path}_b.bin", dtype=np.uint32)
+    expected = np.fromfile(f"{case_path}_expected.bin", dtype=np.uint32)
     
     return input_a, input_b, expected
 
