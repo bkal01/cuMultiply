@@ -13,6 +13,7 @@ __global__ void multiplyKernel(uint32_t* C, uint64_t* bigC, const uint32_t* A, c
         if (aPos < sizeA && bPos < sizeB) {
             uint64_t product = (uint64_t)A[aPos] * (uint64_t)B[bPos];
             int cPos = aPos + bPos;
+            // cast as unsigned long long int to match atomicAdd signature.
             atomicAdd((unsigned long long int*)bigC + cPos, (unsigned long long int)product);
         }
     }
@@ -54,7 +55,7 @@ extern "C" cudaError_t multiply(
     
     size_t sizeC = sizeA + sizeB;
     cudaMemset(bigC, 0, sizeC * sizeof(uint64_t));
-    
+    cudaMemset(C, 0, (sizeC + 1) * sizeof(uint32_t)); 
     multiplyKernel<<<numBlocks, threadsPerBlock, 0, stream>>>(C, bigC, A, B, sizeA, sizeB);
     carryPropagationKernel<<<1, threadsPerBlock, 0, stream>>>(C, bigC, sizeC);
     
