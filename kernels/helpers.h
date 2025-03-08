@@ -7,7 +7,6 @@
 
 constexpr uint64_t UINT64_MAX_PRIME = 18446744073709551557ULL;
 
-
 /**
  * Checks if a uint64_t is prime.
  * Miller-Rabin is deterministic for n < 2^64 with the bases {2, 325, 9375, 28178, 450775, 9780504, 1795265022}.
@@ -60,6 +59,72 @@ inline bool isPrime(uint64_t n) {
     }
 
     return true;
+}
+
+/**
+ * Computes the modular inverse of a modulo m using the extended Euclidean algorithm.
+ * Returns 0 if the modular inverse doesn't exist.
+ */
+inline uint64_t modInverse(uint64_t a, uint64_t m) {
+    int64_t m0 = m;
+    int64_t y = 0, x = 1;
+    
+    if (m == 1) return 0;
+    
+    a = a % m;
+    
+    while (a > 1) {
+        int64_t q = a / m;
+        int64_t t = m;
+        
+        m = a % m;
+        a = t;
+        t = y;
+        
+        y = x - q * y;
+        x = t;
+    }
+    
+    if (x < 0) x += m0;
+    
+    return x;
+}
+
+
+/**
+ * Multiplies a multi-precision integer by a 64-bit integer.
+ */
+__device__ void multi_precision_multiply(const uint32_t *a, int a_len, uint64_t multiplier, uint32_t *result, uint64_t *result_len) {
+    uint64_t carry = 0;
+    int i;
+    for (i = 0; i < a_len; i++) {
+        uint64_t prod = (uint64_t)a[i] * multiplier + carry;
+        result[i] = (uint32_t)(prod & 0xFFFFFFFFULL);
+        carry = prod >> 32;
+    }
+    int j = i;
+    while (carry != 0) {
+        result[j++] = (uint32_t)(carry & 0xFFFFFFFFULL);
+        carry >>= 32;
+    }
+    *result_len = j;
+}
+
+/**
+ * Adds a 64-bit integer to a multi-precision integer.
+ */
+__device__ void multi_precision_add(const uint32_t *a, int a_len, uint64_t addend, uint32_t *result, uint64_t *result_len) {
+    uint64_t carry = addend;
+    int i;
+    for (i = 0; i < a_len || carry; i++) {
+        uint64_t sum = carry;
+        if (i < a_len) {
+            sum += a[i];
+        }
+        result[i] = (uint32_t)(sum & 0xFFFFFFFFULL);
+        carry = sum >> 32;
+    }
+    *result_len = i;
 }
 
 #endif // HELPERS_H 
