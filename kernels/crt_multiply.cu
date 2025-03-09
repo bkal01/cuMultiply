@@ -25,13 +25,14 @@ __global__ void multiplyKernel(
         uint64_t r_A = 0;
         uint64_t r_B = 0;
 
-        for (int i = 0; i < sizeA; i++) {
-            r_A = (r_A << 32) % modulus;
-            r_A = (uint64_t)(((unsigned __int128)r_A + A[i]) % modulus);
+        for (int i = sizeA; i > 0; i--) {
+            r_A = (((unsigned __int128)r_A << 32) % modulus);
+            r_A = (r_A + A[i - 1]) % modulus;
         }
-        for (int i = 0; i < sizeB; i++) {
-            r_B = (r_B << 32) % modulus;
-            r_B = (uint64_t)(((unsigned __int128)r_B + B[i]) % modulus);
+
+        for (int i = sizeB; i > 0; i--) {
+            r_B = (((unsigned __int128)r_B << 32) % modulus);
+            r_B = (r_B + B[i - 1]) % modulus;
         }
         
         uint64_t product = (uint64_t)(((unsigned __int128)r_A * r_B) % modulus);
@@ -51,37 +52,36 @@ __global__ void multiplyKernel(
             x[i] = residues[i];
             for (int j = 0; j < i; j++) {
                 uint64_t inverse = W[j * numModuli + i];
-                x[i] = (uint64_t)(((unsigned __int128)(x[i] - x[j] + moduli[i]) * inverse) % moduli[i]);
+                x[i] = (uint64_t)(((unsigned __int128)(x[i] + moduli[i] - x[j]) * inverse) % moduli[i]);
             }
         }
         
-        // Initialize output array
+        // Initialize accumulator (assumed to be little‑endian; starting at 0)
         for (size_t i = 0; i < sizeC; i++) {
             C[i] = 0;
-        }
-        
-        uint64_t accum_len = 1;
-
-        for (int i = 0; i < sizeC; i++) {
             accum[i] = 0;
         }
+        uint64_t accum_len = 1;  // accum currently has one 32-bit word (0)
 
         uint64_t temp_len = 0;
-        for (int i = numModuli - 1; i >= 0; i--) {
-            multi_precision_multiply(accum, accum_len, moduli[i], temp, &temp_len);
+        // Garner reconstruction: accum = accum * moduli[i] + x[i]
+        for (int i = (int)numModuli - 1; i >= 0; i--) {
+            // Use the new helper; note that the result length is accum_len + 2 (max)
+            multi_precision_multiply(accum, accum_len, moduli[i], temp);
+            temp_len = accum_len + 2;
+            while (temp_len > 1 && temp[temp_len - 1] == 0)
+                temp_len--;
+            // Add x[i] (converted to multi‑precision form) to temp.
+            // (Assume multi_precision_add handles a 64-bit add and updates accum_len.)
             multi_precision_add(temp, temp_len, x[i], accum, &accum_len);
         }
 
-        for (int i = 0; i < sizeC; i++) {
-        if (i < accum_len) {
-            C[i] = accum[i];
-            }
-            else {
-                C[i] = 0;
-            }
+        for (uint32_t i = 0; i < sizeC; i++) {
+            C[i] = (i < accum_len) ? accum[i] : 0;
         }
     }
 }
+
 
 extern "C" cudaError_t multiply(
     uint32_t* C,
@@ -114,9 +114,9 @@ extern "C" cudaError_t multiply(
     for (uint64_t i = 0; i < numModuli; i++) {
         for (uint64_t j = 0; j < numModuli; j++) {
             if (i == j) {
-                W[i * numModuli + j] = 1;
-            } else {
-                W[i * numModuli + j] = modInverse(moduli[i] % moduli[j], moduli[j]);
+                W[j * numModuli + i] = 1;
+            } else if (j < i) {
+                W[j * numModuli + i] = modInverse(moduli[j] % moduli[i], moduli[i]);
             }
         }
     }
@@ -138,9 +138,8 @@ extern "C" cudaError_t multiply(
 
     int threadsPerBlock = 256;
     
-    size_t totalWork = sizeA * sizeB;
     // 65535 is the maximum number of blocks that can be used in a CUDA kernel
-    int numBlocks = min((totalWork + threadsPerBlock - 1) / threadsPerBlock, (size_t)65535);
+    int numBlocks = min((numModuli + threadsPerBlock - 1) / threadsPerBlock, (size_t)65535);
 
     multiplyKernel<<<numBlocks, threadsPerBlock>>>(C, A, B, sizeA, sizeB, d_Moduli, numModuli, d_W, d_accum, d_temp);
     
