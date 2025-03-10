@@ -1,5 +1,6 @@
 #include "kernel_interface.h"
-#include "helpers.h"
+#include "host_helpers.h"
+#include "device_helpers.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <iostream>
