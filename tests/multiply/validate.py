@@ -7,7 +7,7 @@ import torch
 import ctypes
 from typing import Dict, List, Tuple
 
-from tests.utils import (
+from tests.multiply.utils import (
     load_cuda_kernel, get_kernel_paths, get_test_cases,
     load_test_case, run_kernel
 )

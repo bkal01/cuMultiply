@@ -6,7 +6,7 @@ import torch
 from typing import List, Tuple, Set, Optional
 
 LIB_DIR = "build/lib"
-TEST_CASES_DIR = "tests/test_cases"
+TEST_CASES_DIR = "tests/multiply/test_cases"
 
 def load_cuda_kernel(kernel_path: str) -> ctypes.CDLL:
     """
