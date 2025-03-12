@@ -7,23 +7,46 @@
 /**
  * Multiplies a multi-precision integer by a 64-bit integer.
  */
-__device__ void multi_precision_multiply(const uint32_t *input, size_t length, uint64_t multiplier, uint32_t *result) {
-    unsigned __int128 carry = 0;
-    size_t i;
-    for (i = 0; i < length; i++) {
-        unsigned __int128 product = (unsigned __int128)input[i] * multiplier + carry;
-        result[i] = (uint32_t)product;      // lower 32 bits
-        carry = product >> 32;              // upper bits become new carry
+__device__ void multi_precision_multiply(const uint32_t *a, uint64_t a_len, uint64_t multiplier,
+                                          uint32_t *result, uint64_t *result_len) {
+    uint32_t low = (uint32_t)(multiplier & 0xFFFFFFFF);
+    uint32_t high = (uint32_t)(multiplier >> 32);
+    
+    uint64_t carry = 0;
+    
+    // Multiply by low 32 bits
+    for (uint64_t i = 0; i < a_len; i++) {
+        uint64_t product = (uint64_t)a[i] * low + carry + result[i];
+        result[i] = (uint32_t)product;
+        carry = product >> 32;
     }
-    // Store any remaining carry in two additional 32-bit chunks.
-    result[i++] = (uint32_t)carry;
-    result[i++] = (uint32_t)(carry >> 32);
+    
+    if (carry) {
+        result[a_len] = (uint32_t)carry;
+        carry = 0;
+    }
+    
+    // Multiply by high 32 bits
+    for (uint64_t i = 0; i < a_len; i++) {
+        uint64_t product = (uint64_t)a[i] * high + carry + result[i+1];
+        result[i+1] = (uint32_t)product;
+        carry = product >> 32;
+    }
+    
+    if (carry) {
+        result[a_len+1] = (uint32_t)carry;
+        *result_len = a_len + 2;
+    } else if (result[a_len]) {
+        *result_len = a_len + 1;
+    } else {
+        *result_len = a_len;
+    }
 }
 
 /**
  * Adds a 64-bit integer to a multi-precision integer.
  */
-__device__ void multi_precision_add(const uint32_t *a, int a_len, uint64_t addend, 
+__device__ void multi_precision_add(const uint32_t *a, uint64_t a_len, uint64_t addend, 
                                       uint32_t *result, uint64_t *result_len) {
     if (a != result) {
         for (int i = 0; i < a_len; i++) {

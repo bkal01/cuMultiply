@@ -68,8 +68,7 @@ __global__ void multiplyKernel(
         // Garner reconstruction: accum = accum * moduli[i] + x[i]
         for (int i = (int)numModuli - 1; i >= 0; i--) {
             // Use the new helper; note that the result length is accum_len + 2 (max)
-            multi_precision_multiply(accum, accum_len, moduli[i], temp);
-            temp_len = accum_len + 2;
+            multi_precision_multiply(accum, accum_len, moduli[i], temp, &temp_len);
             while (temp_len > 1 && temp[temp_len - 1] == 0)
                 temp_len--;
             // Add x[i] (converted to multi‑precision form) to temp.
