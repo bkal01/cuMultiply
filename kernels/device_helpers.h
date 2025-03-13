@@ -88,5 +88,36 @@ __device__ void multi_precision_add(const uint32_t *a, uint64_t a_len, uint64_t 
     *result_len = a_len;
 }
 
+/**
+ * Adds two multi-precision integers represented as little-endian uint32 arrays.
+ * The result is stored in the first array (a). Requires a to be long enough to hold the result.
+ */
+__device__ void multi_precision_add_arrays(uint32_t *a, uint64_t a_len, const uint32_t *b, uint64_t b_len,
+                                           uint64_t *result_len) {
+    uint64_t max_len = (a_len > b_len) ? a_len : b_len;
+    uint64_t carry = 0;
+    
+    // Add chunk by chunk, propagating carry as necessary.
+    for (uint64_t i = 0; i < max_len; i++) {
+        uint64_t a_chunk = (i < a_len) ? a[i] : 0;
+        uint64_t b_chunk = (i < b_len) ? b[i] : 0;
+        
+        uint64_t sum = a_chunk + b_chunk + carry;
+        a[i] = (uint32_t)sum;
+        carry = sum >> 32;
+        
+        if (i >= a_len) {
+            a_len = i + 1;
+        }
+    }
+    
+    // If there's any carry left, append it to the result.
+    if (carry) {
+        a[max_len] = (uint32_t)carry;
+        *result_len = max_len + 1;
+    } else {
+        *result_len = max_len;
+    }
+}
 
 #endif // DEVICE_HELPERS_H 

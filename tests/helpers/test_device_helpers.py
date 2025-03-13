@@ -166,15 +166,91 @@ def test_multi_precision_multiply(num_digits_arg=None):
 
         print("\n" + "="*80 + "\n")
 
+def test_multi_precision_add_arrays(num_digits_arg=None):
+    lib = ctypes.CDLL("build/lib/libdevice_helpers_test.so")
+    
+    lib.launch_multi_precision_add_arrays_test.argtypes = [
+        ctypes.c_void_p,  # a
+        ctypes.c_uint64,  # a_len
+        ctypes.c_void_p,  # b
+        ctypes.c_uint64,  # b_len
+        ctypes.c_void_p,  # result_len
+    ]
+    
+    digit_sizes = [2, 10, 15, 20, 100, 1000]
+    
+    if num_digits_arg is not None:
+        digit_sizes = [num_digits_arg]
+    
+    for digit_size in digit_sizes:
+        # Prepare inputs
+        bits_needed = int(digit_size * 3.32) + 1  # log2(10) ≈ 3.32
+        
+        uint32_count = (bits_needed + 31) // 32
+        
+        a_int = random.randint(10**(digit_size-1), 10**digit_size - 1)
+        b_int = random.randint(10**(digit_size-1), 10**digit_size - 1)
+        
+        a_array = decimal_to_uint32_array(a_int, min_length=uint32_count)
+        b_array = decimal_to_uint32_array(b_int, min_length=uint32_count)
+        
+        a_len = len(a_array)
+        b_len = len(b_array)
+        
+        expected_int = a_int + b_int
+        expected_array = decimal_to_uint32_array(expected_int)
+        expected_len = len(expected_array)
+        
+        result_buffer_size = max(a_len, b_len) + 2
+        
+        a_gpu = torch.from_numpy(a_array).cuda()
+        b_gpu = torch.from_numpy(b_array).cuda()
+        
+        # Make sure a is large enough to hold the result of the addition.
+        result_gpu = torch.zeros(result_buffer_size, dtype=torch.uint32).cuda()
+        result_gpu[:a_len] = a_gpu
+        result_len_gpu = torch.zeros(1, dtype=torch.uint64).cuda()
+        
+        # Call kernel
+        lib.launch_multi_precision_add_arrays_test(
+            result_gpu.data_ptr(),
+            a_len,
+            b_gpu.data_ptr(),
+            b_len,
+            result_len_gpu.data_ptr()
+        )
+        
+        result_array = result_gpu.cpu().numpy()
+        result_len = int(result_len_gpu.cpu().numpy()[0])
+        
+        result_int = uint32_array_to_int(result_array)
+
+        if result_int == expected_int:
+            print(f"Multi-precision add_arrays test passed for {digit_size} digits")
+            print(f"Input: {a_int} + {b_int} = {expected_int}")
+            print(f"Expected array: {expected_array}")
+            print(f"Result array: {result_array[:result_len]}")
+        else:
+            print(f"Multi-precision add_arrays test failed for {digit_size} digits")
+            print(f"Input: {a_int} + {b_int} = {expected_int}")
+            print(f"Got: {result_int}")
+            print(f"Expected array: {expected_array}")
+            print(f"Result array: {result_array[:result_len]}")
+
+        print("\n" + "="*80 + "\n")
+
 def test_device_helpers(args=None):
     if args:
         if args.ops == "all":
             test_multi_precision_add(num_digits_arg=args.num_digits)
             test_multi_precision_multiply(num_digits_arg=args.num_digits)
+            test_multi_precision_add_arrays(num_digits_arg=args.num_digits)
         elif args.ops == "add":
             test_multi_precision_add(num_digits_arg=args.num_digits)
         elif args.ops == "multiply":
             test_multi_precision_multiply(num_digits_arg=args.num_digits)
+        elif args.ops == "add_arrays":
+            test_multi_precision_add_arrays(num_digits_arg=args.num_digits)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run multi-precision math tests')
