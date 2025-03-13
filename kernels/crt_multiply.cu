@@ -57,27 +57,41 @@ __global__ void multiplyKernel(
             }
         }
         
-        // Initialize accumulator (assumed to be little‑endian; starting at 0)
-        for (size_t i = 0; i < sizeC; i++) {
-            C[i] = 0;
+        // Initialize C with the first mixed radix digit (x[0])
+        C[0] = (uint32_t)(x[0] & 0xFFFFFFFF);
+        C[1] = (uint32_t)(x[0] >> 32);
+        
+        // Set accum to 1 (as a multi-precision integer)
+        for (int i = 0; i < sizeC; i++) {
             accum[i] = 0;
+            temp[i] = 0;
         }
-        uint64_t accum_len = 1;  // accum currently has one 32-bit word (0)
-
-        uint64_t temp_len = 0;
-        // Garner reconstruction: accum = accum * moduli[i] + x[i]
-        for (int i = (int)numModuli - 1; i >= 0; i--) {
-            // Use the new helper; note that the result length is accum_len + 2 (max)
-            multi_precision_multiply(accum, accum_len, moduli[i], temp, &temp_len);
-            while (temp_len > 1 && temp[temp_len - 1] == 0)
-                temp_len--;
-            // Add x[i] (converted to multi‑precision form) to temp.
-            // (Assume multi_precision_add handles a 64-bit add and updates accum_len.)
-            multi_precision_add(temp, temp_len, x[i], accum, &accum_len);
-        }
-
-        for (uint32_t i = 0; i < sizeC; i++) {
-            C[i] = (i < accum_len) ? accum[i] : 0;
+        accum[0] = 1;
+        uint64_t accum_len = 1;
+        
+        // Recombine the mixed radix representation
+        for (int i = 1; i < numModuli; i++) {
+            // Multiply accum by previous modulus: accum = accum * moduli[i-1]
+            // Use temp as the output buffer to avoid same-array input/output issue
+            for (int j = 0; j < sizeC; j++) {
+                temp[j] = 0;
+            }
+            uint64_t temp_len;
+            multi_precision_multiply(accum, accum_len, moduli[i-1], temp, &temp_len);
+            
+            // Copy result back to accum
+            for (int j = 0; j < temp_len; j++) {
+                accum[j] = temp[j];
+                temp[j] = 0;
+            }
+            accum_len = temp_len;
+            
+            // Multiply accum by current mixed radix digit: temp = accum * x[i]
+            multi_precision_multiply(accum, accum_len, x[i], temp, &temp_len);
+            
+            // Add temp to C: C += temp
+            uint64_t c_len = sizeC;
+            multi_precision_add_arrays(C, c_len, temp, temp_len, &c_len);
         }
     }
 }
