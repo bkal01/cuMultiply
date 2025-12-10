@@ -9,7 +9,7 @@ import torch
 
 app = modal.App(name="cuMultiply")
 
-DEFAULT_BIT_LENGTH = 64
+DEFAULT_BIT_LENGTH = 1_000_000
 DEFAULT_TRIALS = 5
 RANDOM_SEED = 42
 
@@ -53,11 +53,18 @@ def uint64_tensor_to_int(limbs):
     return val
 
 def normalize(limbs):
+    """
+    we have a limbs tensor that look like this:
+    [limb_0_lane_0, limb_0_lane_1, limb_1_lane_0, ...]
+    with each lane being a uint64 and pairs of lanes representing high/low bits of a "uint128" limb.
+    we want to normalize this to a tensor of uint32s.
+    """
     carry = 0
-    new_limbs = [0 for _ in range(len(limbs))]
-    for i in range(len(limbs)):
-        total = limbs[i].item() + carry
-        new_limbs[i] = total & ((1 << 32) - 1)
+    new_limbs = []
+    for i in range(0, len(limbs), 2):
+        low, high = limbs[i], limbs[i + 1]
+        total = low.item() + (high.item() << 64) + carry
+        new_limbs.append(total & ((1 << 32) - 1))
         carry = total >> 32
     while carry:
         new_limbs.append(carry & ((1 << 32) - 1))
@@ -112,8 +119,8 @@ def run_kernel(bit_length: int = DEFAULT_BIT_LENGTH, trials: int = DEFAULT_TRIAL
         cpu_elapsed = time.perf_counter() - cpu_start
         cpu_times.append(cpu_elapsed)
 
-        a_tensor = int_to_uint32_tensor(a)
-        b_tensor = int_to_uint32_tensor(b)
+        a_tensor = int_to_uint32_tensor(a).to(device)
+        b_tensor = int_to_uint32_tensor(b).to(device)
 
         torch.cuda.synchronize()
         start_event = torch.cuda.Event(enable_timing=True)

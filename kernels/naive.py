@@ -9,6 +9,7 @@ bigint_mul_cuda_source = r"""
 #include <cuda_runtime.h>
 
 #define TILE 16
+#define LANES 2
 
 __global__ void bigint_mul_kernel(const uint* __restrict__ A,
                               const uint* __restrict__ B,
@@ -16,7 +17,7 @@ __global__ void bigint_mul_kernel(const uint* __restrict__ A,
                               int M) {
     __shared__ uint As[TILE];
     __shared__ uint Bs[TILE];
-    __shared__ uint64_t Cs[2*TILE];
+    __shared__ uint64_t Cs[2*TILE*LANES];
 
     int tx = threadIdx.x;
     int ty = threadIdx.y;
@@ -35,20 +36,39 @@ __global__ void bigint_mul_kernel(const uint* __restrict__ A,
         } else {
             Bs[tx] = 0;
         }
-        Cs[tx] = 0;
-        Cs[tx + TILE] = 0;
+        Cs[tx*LANES] = 0;
+        Cs[tx*LANES + 1] = 0;
+        Cs[(tx + TILE)*LANES] = 0;
+        Cs[(tx + TILE)*LANES + 1] = 0;
     }
     __syncthreads();
 
     if (a_tile_index + tx + b_tile_index + ty < 2*M) {
         unsigned long long int prod = ((unsigned long long int)As[ty]) * ((unsigned long long int)Bs[tx]);
-        atomicAdd((unsigned long long int*)&Cs[tx + ty], prod);
+        unsigned long long int prev = atomicAdd((unsigned long long int*)&Cs[(tx + ty)*LANES], prod);
+        bool carry = (prev + prod) < prev;
+        if (carry) {
+            atomicAdd((unsigned long long int*)&Cs[(tx + ty)*LANES + 1], (unsigned long long int) carry);
+        }
     }
     __syncthreads();
 
-    int tid = tx * TILE + ty;
-    if (tid < 2 * TILE && a_tile_index + b_tile_index + tid < 2*M) {
-        atomicAdd((unsigned long long int*)&C[a_tile_index + b_tile_index + tid], (unsigned long long int)Cs[tid]);
+    int tid = ty * TILE + tx;
+    if (tid < 2 * TILE * LANES) {
+        int pos = tid / LANES;
+        int lane = tid % LANES;
+        int global_pos = a_tile_index + b_tile_index + pos;
+
+        if (lane == 0 && global_pos < 2 * M) {
+            unsigned long long low = Cs[tid];
+            unsigned long long high = Cs[tid + 1];
+
+            unsigned long long prev = atomicAdd((unsigned long long int*)&C[global_pos * LANES], low);
+            unsigned long long carry = (prev + low) < prev;
+
+            unsigned long long next = high + carry;
+            atomicAdd((unsigned long long int*)&C[global_pos * LANES + 1], next);
+        }
     }
 }
 
@@ -78,7 +98,7 @@ torch::Tensor bigint_mul_cuda(torch::Tensor A, torch::Tensor B) {
 
     int M = A.size(0);
     auto options = torch::TensorOptions().dtype(torch::kUInt64).device(torch::kCUDA);
-    torch::Tensor C = torch::zeros({2 * M}, options);
+    torch::Tensor C = torch::zeros({2 * M * LANES}, options);
 
     dim3 threads(TILE, TILE);
     int tiles = (M + TILE - 1) / TILE;
