@@ -9,7 +9,7 @@ import torch
 
 app = modal.App(name="cuMultiply")
 
-DEFAULT_BIT_LENGTH = 1_000_000
+DEFAULT_BIT_LENGTH = 10_000_000
 DEFAULT_TRIALS = 5
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
@@ -40,11 +40,12 @@ def load_kernel_model(kernel_name):
         raise ValueError(f"No model found in {kernel_name}.py")
     return model_cls().eval()
 
-# convert an integer to a little-endian tensor of uint32 limbs
-def int_to_uint32_tensor(value):
-    num_limbs = (value.bit_length() + 31) // 32
-    limbs = [(value >> (32 * i)) & ((1 << 32) - 1) for i in range(num_limbs)]
-    return torch.tensor(limbs, dtype=torch.uint32)
+# convert an integer to a bytes, represented as a little-endian array of uint32 limbs
+def int_to_uint32_bytes(value):
+    num_bytes = math.ceil(value.bit_length() / 8)
+    b = value.to_bytes(num_bytes, "little")
+    b += b'\x00' * (4 - len(b) % 4)
+    return b
 
 def normalize(limbs):
     """
@@ -65,12 +66,6 @@ def normalize(limbs):
         carry >>= 32
     return torch.tensor(new_limbs, dtype=torch.uint32)
 
-def uint32_tensor_to_int(limbs):
-    val = 0
-    for i in range(len(limbs) - 1, -1, -1):
-        val = (val << 32) | int(limbs[i].detach().cpu().numpy())
-    return val
-
 def summarize(times):
     return {
         "mean": statistics.fmean(times),
@@ -81,12 +76,14 @@ def summarize(times):
 
 def generate_inputs(bit_length, trials):
     inputs = []
+    gpu_inputs = []
     high_bit = 1 << (bit_length - 1)
     for _ in range(trials):
         a = high_bit | random.getrandbits(bit_length - 1)
         b = high_bit | random.getrandbits(bit_length - 1)
         inputs.append((a, b))
-    return inputs
+        gpu_inputs.append((int_to_uint32_bytes(a), int_to_uint32_bytes(b)))
+    return inputs, gpu_inputs
 
 def cpu_baseline(inputs):
     """
@@ -99,14 +96,14 @@ def cpu_baseline(inputs):
         start_time = time.perf_counter()
         result = a * b
         elapsed = time.perf_counter() - start_time
-        print(f"Time taken: {elapsed:.2f} seconds")
+        print(f"Time taken: {elapsed:.6f} seconds")
         results.append(result)
         elapsed_times.append(elapsed)
     return results, elapsed_times
 
 
 @app.function(image=kernel_image, gpu="A100")
-async def run_kernel(warmup_input: tuple[int, int], inputs, kernel: str = "naive"):
+async def run_kernel(warmup_input, inputs, kernel: str = "naive"):
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA device is required for kernel evaluation.")
     device = torch.device("cuda")
@@ -115,8 +112,7 @@ async def run_kernel(warmup_input: tuple[int, int], inputs, kernel: str = "naive
     elapsed_times = []
 
     a_warm, b_warm = warmup_input
-    a_warm_tensor = int_to_uint32_tensor(a_warm).to(device)
-    b_warm_tensor = int_to_uint32_tensor(b_warm).to(device)
+    a_warm_tensor, b_warm_tensor = torch.frombuffer(bytearray(a_warm), dtype=torch.uint32).to(device), torch.frombuffer(bytearray(b_warm), dtype=torch.uint32).to(device)
     with torch.no_grad():
         for _ in range(3):
             model(a_warm_tensor, b_warm_tensor)
@@ -124,8 +120,8 @@ async def run_kernel(warmup_input: tuple[int, int], inputs, kernel: str = "naive
 
     for i, (a, b) in enumerate(inputs):
         print(f"Executing trial {(i+1)}/{len(inputs)} on GPU...")
-        a_tensor = int_to_uint32_tensor(a).to(device)
-        b_tensor = int_to_uint32_tensor(b).to(device)
+        a_tensor, b_tensor = torch.frombuffer(bytearray(a), dtype=torch.uint32), torch.frombuffer(bytearray(b), dtype=torch.uint32)
+        a_tensor, b_tensor = a_tensor.to(device), b_tensor.to(device)
 
         torch.cuda.synchronize()
         start_event = torch.cuda.Event(enable_timing=True)
@@ -138,26 +134,28 @@ async def run_kernel(warmup_input: tuple[int, int], inputs, kernel: str = "naive
 
         torch.cuda.synchronize()
         elapsed = start_event.elapsed_time(end_event) / 1_000
-        print(f"Time taken: {elapsed:.2f} seconds")
+        print(f"Time taken: {elapsed:.6f} seconds")
         elapsed_times.append(elapsed)
 
         gpu_output = gpu_output.to("cpu")
         gpu_output = normalize(gpu_output)
-        gpu_result = uint32_tensor_to_int(gpu_output)
 
-        results.append(gpu_result)
+        results.append(gpu_output.numpy().tobytes())
 
     return results, elapsed_times
 
 @app.local_entrypoint()
 def main(trials: int = DEFAULT_TRIALS, bit_length: int = DEFAULT_BIT_LENGTH, kernel: str = "naive"):
+    from eval_utils import gu32ops
+
     start = time.perf_counter()
-    inputs = generate_inputs(bit_length, trials)
-    warmup_input = generate_inputs(bit_length, 1)[0]
+    inputs, gpu_inputs = generate_inputs(bit_length, trials)
+    _, gpu_warmup_inputs = generate_inputs(bit_length, 1)
+    gpu_warmup_input = gpu_warmup_inputs[0]
 
     # we fire off the Modal function to run in the background while we do the CPU computation.
     # even though CPU execution time is higher (at higher bit lengths), we don't want to do nothing during the Modal startup time.
-    modal_function_call = run_kernel.spawn(warmup_input=warmup_input, inputs=inputs, kernel=kernel)
+    modal_function_call = run_kernel.spawn(warmup_input=gpu_warmup_input, inputs=gpu_inputs, kernel=kernel)
     cpu_results, cpu_elapsed_times = cpu_baseline(inputs)
     gpu_results, gpu_elapsed_times = modal_function_call.get()
 
@@ -165,6 +163,7 @@ def main(trials: int = DEFAULT_TRIALS, bit_length: int = DEFAULT_BIT_LENGTH, ker
 
     for i in range(trials):
         cpu_result, cpu_elapsed_time, gpu_result, gpu_elapsed_time = cpu_results[i], cpu_elapsed_times[i], gpu_results[i], gpu_elapsed_times[i]
+        gpu_result = int.from_bytes(gpu_result, "little")
         if cpu_result != gpu_result:
             print(f"Mismatch detected between CPU and GPU results for trial {i+1}")
             print(f"CPU result: {cpu_result}")
@@ -173,7 +172,8 @@ def main(trials: int = DEFAULT_TRIALS, bit_length: int = DEFAULT_BIT_LENGTH, ker
             passed_trials += 1
             speedup = cpu_elapsed_time / gpu_elapsed_time
             print(f"Passed trial {i+1}")
-            print(f"CPU time: {cpu_elapsed_time:.4f}s | GPU time: {gpu_elapsed_time:.4f}s | speedup: {speedup:.2f}x")
+            print(f"CPU time: {cpu_elapsed_time:.6f}s | GPU time: {gpu_elapsed_time:.6f}s | speedup: {speedup:.2f}x")
+            print(f"Gu32ops/sec: {gu32ops(bit_length, kernel) / gpu_elapsed_time}")
 
     print(f"Passed {passed_trials}/{trials} trials")
     print(f"CPU summary: {summarize(cpu_elapsed_times)}")
